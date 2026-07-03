@@ -1,0 +1,23 @@
+{
+  "name": "pinpoint-claude",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Live browser UI annotation → Claude Code, via a Channels MCP bridge. Click an element in your dev app, type a note, and it streams into your running Claude Code session with screenshot + CSS selector + URL.",
+  "author": "Marvin von Spreckelsen (https://github.com/mrvnklm)",
+  "license": "MIT",
+  "homepage": "https://github.com/mrvnklm/pinpoint#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/mrvnklm/pinpoint.git" },
+  "bugs": { "url": "https://github.com/mrvnklm/pinpoint/issues" },
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@medv/finder": "^4.0.2",
+    "html-to-image": "^1.11.13",
+    "esbuild": "^0.24.0"
+  }
+}

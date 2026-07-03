@@ -1,0 +1,10 @@
+{
+  "name": "pinpoint",
+  "description": "Live in-browser UI annotation for Claude Code: click an element in your dev app, type a note, and it streams into your running Claude session with screenshot + CSS selector + URL. Built on Claude Code Channels.",
+  "version": "0.1.0",
+  "author": { "name": "Marvin von Spreckelsen", "url": "https://github.com/mrvnklm" },
+  "homepage": "https://github.com/mrvnklm/pinpoint",
+  "repository": "https://github.com/mrvnklm/pinpoint",
+  "keywords": ["channel","ui","annotation","browser","overlay","frontend","devtools","mcp"],
+  "license": "MIT"
+}

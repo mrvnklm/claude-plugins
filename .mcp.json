@@ -1,0 +1,6 @@
+{
+  "pinpoint": {
+    "command": "node",
+    "args": ["${CLAUDE_PLUGIN_ROOT}/bridge/server.mjs"]
+  }
+}
