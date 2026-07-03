@@ -1,5 +1,5 @@
 (() => {
-  // node_modules/@medv/finder/finder.js
+  // ../../node_modules/@medv/finder/finder.js
   var acceptedAttrNames = /* @__PURE__ */ new Set(["role", "name", "aria-label", "rel", "href"]);
   function attr(name, value) {
     let nameIsOk = acceptedAttrNames.has(name);
@@ -280,7 +280,7 @@
     }
   }
 
-  // node_modules/html-to-image/es/util.js
+  // ../../node_modules/html-to-image/es/util.js
   function resolveUrl(url, baseUrl) {
     if (url.match(/^[a-z]+:\/\//i)) {
       return url;
@@ -430,7 +430,7 @@
     return nodePrototype.constructor.name === instance.name || isInstanceOfElement(nodePrototype, instance);
   };
 
-  // node_modules/html-to-image/es/clone-pseudos.js
+  // ../../node_modules/html-to-image/es/clone-pseudos.js
   function formatCSSText(style) {
     const content = style.getPropertyValue("content");
     return `${style.cssText} content: '${content.replace(/'|"/g, "")}';`;
@@ -468,7 +468,7 @@
     clonePseudoElement(nativeNode, clonedNode, ":after", options);
   }
 
-  // node_modules/html-to-image/es/mimes.js
+  // ../../node_modules/html-to-image/es/mimes.js
   var WOFF = "application/font-woff";
   var JPEG = "image/jpeg";
   var mimes = {
@@ -493,7 +493,7 @@
     return mimes[extension] || "";
   }
 
-  // node_modules/html-to-image/es/dataurl.js
+  // ../../node_modules/html-to-image/es/dataurl.js
   function getContentFromDataUrl(dataURL) {
     return dataURL.split(/,/)[1];
   }
@@ -564,7 +564,7 @@
     return dataURL;
   }
 
-  // node_modules/html-to-image/es/clone-node.js
+  // ../../node_modules/html-to-image/es/clone-node.js
   async function cloneCanvasElement(canvas) {
     const dataURL = canvas.toDataURL();
     if (dataURL === "data:,") {
@@ -729,7 +729,7 @@
     return Promise.resolve(node).then((clonedNode) => cloneSingleNode(clonedNode, options)).then((clonedNode) => cloneChildren(node, clonedNode, options)).then((clonedNode) => decorate(node, clonedNode, options)).then((clonedNode) => ensureSVGSymbols(clonedNode, options));
   }
 
-  // node_modules/html-to-image/es/embed-resources.js
+  // ../../node_modules/html-to-image/es/embed-resources.js
   var URL_REGEX = /url\((['"]?)([^'"]+?)\1\)/g;
   var URL_WITH_FORMAT_REGEX = /url\([^)]+\)\s*format\((["']?)([^"']+)\1\)/g;
   var FONT_SRC_REGEX = /src:\s*(?:url\([^)]+\)\s*format\([^)]+\)[,;]\s*)+/g;
@@ -786,7 +786,7 @@
     return urls.reduce((deferred, url) => deferred.then((css) => embed(css, url, baseUrl, options)), Promise.resolve(filteredCSSText));
   }
 
-  // node_modules/html-to-image/es/embed-images.js
+  // ../../node_modules/html-to-image/es/embed-images.js
   async function embedProp(propName, node, options) {
     var _a;
     const propValue = (_a = node.style) === null || _a === void 0 ? void 0 : _a.getPropertyValue(propName);
@@ -846,7 +846,7 @@
     }
   }
 
-  // node_modules/html-to-image/es/apply-style.js
+  // ../../node_modules/html-to-image/es/apply-style.js
   function applyStyle(node, options) {
     const { style } = node;
     if (options.backgroundColor) {
@@ -867,7 +867,7 @@
     return node;
   }
 
-  // node_modules/html-to-image/es/embed-webfonts.js
+  // ../../node_modules/html-to-image/es/embed-webfonts.js
   var cssFetchCache = {};
   async function fetchCSS(url) {
     let cache2 = cssFetchCache[url];
@@ -1037,7 +1037,7 @@
     }
   }
 
-  // node_modules/html-to-image/es/index.js
+  // ../../node_modules/html-to-image/es/index.js
   async function toSvg(node, options = {}) {
     const { width, height } = getImageSize(node, options);
     const clonedNode = await cloneNode(node, options, true);
@@ -1220,6 +1220,7 @@
     }
     function onClickCapture(e) {
       if (!picking) return;
+      if (e.composedPath && e.composedPath().includes(host)) return;
       const el = elementUnderCursor(e.clientX, e.clientY);
       if (!el) return;
       e.preventDefault();

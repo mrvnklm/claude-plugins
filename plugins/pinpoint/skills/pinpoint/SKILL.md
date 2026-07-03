@@ -62,7 +62,7 @@ it NEVER loads in production** (dev-only env check or localhost hostname check).
 When a tag arrives, it looks like:
 
 ```
-<channel source="pinpoint" selector="body > main > button.save" url="http://localhost:3000/settings" screenshot="/abs/project/.pinpoint/shot-1.png" source_hint="/src/SettingsForm.vue:42:7" id="1">Make this button green</channel>
+<channel source="pinpoint" selector="body > main > button.save" url="http://localhost:3000/settings" title="Settings — Acme" screenshot="/abs/project/.pinpoint/shot-1.png" source_hint="/src/SettingsForm.vue:42:7" id="1" viewport="1440x900">Make this button green</channel>
 ```
 
 Do this:

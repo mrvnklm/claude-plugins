@@ -191,6 +191,9 @@ function init() {
 
   function onClickCapture(e) {
     if (!picking) return;
+    // A click on our own overlay (e.g. the FAB to toggle pick mode off) must
+    // reach its own handler, not be captured as a target pick.
+    if (e.composedPath && e.composedPath().includes(host)) return;
     const el = elementUnderCursor(e.clientX, e.clientY);
     if (!el) return;
     // Stop the host app from reacting to this click.

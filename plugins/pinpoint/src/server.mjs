@@ -7,13 +7,16 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { createServer } from 'node:http'
-import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
+
+const MAX_BODY_BYTES = 12 * 1024 * 1024 // 12 MB — a base64 screenshot of a large element can be big
+const MAX_PORT_PROBES = 20 // how many ports to try if the preferred one is taken
 
 // ---------------------------------------------------------------------------
 // MCP server declaring the channel capability. The `experimental` capability
@@ -36,13 +39,24 @@ const mcp = new Server(
 )
 
 // ---------------------------------------------------------------------------
-// Config: <cwd>/.pinpoint/config.json = { port, token }. Bridge owns the file.
+// Config: <cwd>/.pinpoint/{config.json,.gitignore}. Bridge owns these.
 // ---------------------------------------------------------------------------
 const cwd = process.cwd()
 const dir = join(cwd, '.pinpoint')
 mkdirSync(dir, { recursive: true })
-const configPath = join(dir, 'config.json')
 
+// The token is the ONLY gate on the bridge, and screenshots may contain PII —
+// keep the whole .pinpoint/ directory out of version control.
+const gitignorePath = join(dir, '.gitignore')
+if (!existsSync(gitignorePath)) {
+  try {
+    writeFileSync(gitignorePath, '*\n')
+  } catch (err) {
+    console.error('pinpoint: could not write .pinpoint/.gitignore:', err)
+  }
+}
+
+const configPath = join(dir, 'config.json')
 let config
 if (existsSync(configPath)) {
   try {
@@ -52,17 +66,42 @@ if (existsSync(configPath)) {
     config = null
   }
 }
-if (!config || typeof config.port !== 'number' || typeof config.token !== 'string') {
-  config = {
-    port: Number(process.env.PINPOINT_PORT) || 4849,
-    token: randomUUID(),
-  }
-  writeFileSync(configPath, JSON.stringify(config, null, 2))
+if (!config || typeof config.token !== 'string') {
+  config = { port: undefined, token: randomUUID() }
 }
-const { port, token } = config
+const token = config.token
+// Preferred port: explicit env override wins, else the last-used port, else 4849.
+const desiredPort = Number(process.env.PINPOINT_PORT) || Number(config.port) || 4849
 
-// Incrementing annotation id (module-level).
+function persistConfig(actualPort) {
+  config.port = actualPort
+  try {
+    writeFileSync(configPath, JSON.stringify({ port: config.port, token: config.token }, null, 2))
+  } catch (err) {
+    console.error('pinpoint: failed to write config.json:', err)
+  }
+}
+
+// Seed the annotation id above any screenshot already on disk, so a restart
+// never clobbers a shot-<id>.png that a still-open <channel> tag references.
 let nextId = 1
+try {
+  const maxN = readdirSync(dir)
+    .map((f) => /^shot-(\d+)\.png$/.exec(f))
+    .filter(Boolean)
+    .reduce((m, x) => Math.max(m, Number(x[1])), 0)
+  nextId = maxN + 1
+} catch {
+  /* dir just created / unreadable — start at 1 */
+}
+
+// Constant-time token comparison (avoids a timing side channel on the gate).
+function tokenOk(provided) {
+  if (typeof provided !== 'string') return false
+  const a = Buffer.from(provided)
+  const b = Buffer.from(token)
+  return a.length === b.length && timingSafeEqual(a, b)
+}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -78,11 +117,28 @@ function sendJson(res, status, obj) {
   res.end(JSON.stringify(obj))
 }
 
+// Sentinel returned by readBody when the request body exceeds the size cap, so
+// the handler can answer a clean 413 instead of the socket being reset.
+const TOO_LARGE = Symbol('too-large')
+
+// Read the request body with a hard size cap so a giant capture can't blow up
+// memory or stall the event loop.
 function readBody(req) {
   return new Promise((resolve, reject) => {
     const chunks = []
-    req.on('data', (c) => chunks.push(c))
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')))
+    let size = 0
+    let over = false
+    req.on('data', (c) => {
+      if (over) return // keep draining so we can still send a response, but stop buffering
+      size += c.length
+      if (size > MAX_BODY_BYTES) {
+        over = true
+        chunks.length = 0 // release what we buffered
+        return
+      }
+      chunks.push(c)
+    })
+    req.on('end', () => resolve(over ? TOO_LARGE : Buffer.concat(chunks).toString('utf8')))
     req.on('error', reject)
   })
 }
@@ -122,12 +178,23 @@ const http = createServer(async (req, res) => {
 
     if (method === 'POST' && url === '/annotation') {
       // 1. Token gate.
-      if (req.headers['x-pinpoint-token'] !== token) {
+      if (!tokenOk(req.headers['x-pinpoint-token'])) {
         sendJson(res, 403, { ok: false, error: 'forbidden' })
         return
       }
 
-      const raw = await readBody(req)
+      let raw
+      try {
+        raw = await readBody(req)
+      } catch (err) {
+        sendJson(res, 400, { ok: false, error: 'read error' })
+        return
+      }
+      if (raw === TOO_LARGE) {
+        sendJson(res, 413, { ok: false, error: 'payload too large' })
+        return
+      }
+
       let data
       try {
         data = JSON.parse(raw || '{}')
@@ -200,14 +267,76 @@ const http = createServer(async (req, res) => {
   }
 })
 
-// Start listening regardless of whether a Claude peer attaches, so a standalone
-// `node src/server.mjs` still opens the port for smoke testing.
-http.listen(port, '127.0.0.1', () => {
-  console.error(
-    `pinpoint bridge listening on http://127.0.0.1:${port} (token in .pinpoint/config.json)`
-  )
-})
+// ---------------------------------------------------------------------------
+// Listen, with automatic fallback if the preferred port is taken (two projects
+// each run their own bridge). The actual port is persisted to config.json so
+// the overlay injection — generated from that file — always matches.
+// ---------------------------------------------------------------------------
+let steadyErrorAttached = false
+
+function tryListen(port, attemptsLeft) {
+  function cleanup() {
+    http.removeListener('error', onError)
+    http.removeListener('listening', onListening)
+  }
+  function onError(err) {
+    cleanup()
+    if (err && err.code === 'EADDRINUSE' && attemptsLeft > 0) {
+      console.error(`pinpoint: port ${port} in use, trying ${port + 1}`)
+      tryListen(port + 1, attemptsLeft - 1)
+    } else {
+      console.error('pinpoint: HTTP server failed to bind:', err)
+      process.exit(1)
+    }
+  }
+  function onListening() {
+    cleanup()
+    if (!steadyErrorAttached) {
+      http.on('error', (e) => console.error('pinpoint: HTTP error:', e))
+      steadyErrorAttached = true
+    }
+    if (port !== config.port) persistConfig(port)
+    if (port !== desiredPort) {
+      console.error(
+        `pinpoint: NOTE bound to ${port} instead of ${desiredPort}; .pinpoint/config.json updated — regenerate the overlay injection with the new port.`
+      )
+    }
+    console.error(
+      `pinpoint bridge listening on http://127.0.0.1:${port} (token in .pinpoint/config.json)`
+    )
+  }
+  http.once('error', onError)
+  http.once('listening', onListening)
+  http.listen(port, '127.0.0.1')
+}
+
+// Start the HTTP listener regardless of whether a Claude peer attaches, so a
+// standalone `node bridge/server.mjs` still opens the port for smoke testing.
+tryListen(desiredPort, MAX_PORT_PROBES)
+
+// ---------------------------------------------------------------------------
+// Lifecycle: die with the session. When Claude Code closes the stdio pipe (or
+// on a signal), shut the HTTP listener and exit so we don't linger holding the
+// port and crash the next session with EADDRINUSE.
+// ---------------------------------------------------------------------------
+let shuttingDown = false
+function shutdown() {
+  if (shuttingDown) return
+  shuttingDown = true
+  try {
+    http.close()
+  } catch {
+    /* ignore */
+  }
+  process.exit(0)
+}
+
+const transport = new StdioServerTransport()
+transport.onclose = shutdown
+process.stdin.on('end', shutdown)
+process.stdin.on('close', shutdown)
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, shutdown)
 
 // Connect the stdio MCP transport so the process stays alive as an MCP server.
 // connect() for stdio resolves immediately.
-await mcp.connect(new StdioServerTransport())
+await mcp.connect(transport)
