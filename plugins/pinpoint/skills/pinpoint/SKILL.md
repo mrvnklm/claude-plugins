@@ -20,10 +20,10 @@ activate the channel — the session must be started with the development-channe
 flag:
 
 ```
-claude --dangerously-load-development-channels plugin:pinpoint@<marketplace>
+claude --dangerously-load-development-channels plugin:pinpoint@mrvnklm
 ```
 
-Replace `<marketplace>` with the marketplace the plugin was installed from.
+(`mrvnklm` is the marketplace name from `mrvnklm/claude-plugins`.)
 Requires **Claude Code v2.1.80+** and an **Anthropic login** (channels are not
 available on non-Anthropic providers). If the flag is missing, no pinpoint tags
 will ever arrive no matter what the browser does.
@@ -85,7 +85,7 @@ Do this:
 ## Troubleshooting
 
 - **No pinpoint tags ever arrive** → the session was not started with
-  `--dangerously-load-development-channels plugin:pinpoint@<marketplace>`
+  `--dangerously-load-development-channels plugin:pinpoint@mrvnklm`
   (channel not active). Restart Claude Code with the flag.
 - **Overlay not visible in the browser** → injection not wired, wrong `port`, or
   wrong `token`. Confirm the `<script id="pinpoint-overlay">` is present in the

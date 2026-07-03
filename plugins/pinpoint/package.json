@@ -6,9 +6,9 @@
   "description": "Live browser UI annotation → Claude Code, via a Channels MCP bridge. Click an element in your dev app, type a note, and it streams into your running Claude Code session with screenshot + CSS selector + URL.",
   "author": "Marvin von Spreckelsen (https://github.com/mrvnklm)",
   "license": "MIT",
-  "homepage": "https://github.com/mrvnklm/pinpoint#readme",
-  "repository": { "type": "git", "url": "git+https://github.com/mrvnklm/pinpoint.git" },
-  "bugs": { "url": "https://github.com/mrvnklm/pinpoint/issues" },
+  "homepage": "https://github.com/mrvnklm/claude-plugins/tree/main/plugins/pinpoint#readme",
+  "repository": { "type": "git", "url": "git+https://github.com/mrvnklm/claude-plugins.git", "directory": "plugins/pinpoint" },
+  "bugs": { "url": "https://github.com/mrvnklm/claude-plugins/issues" },
   "scripts": {
     "build": "node build.mjs"
   },

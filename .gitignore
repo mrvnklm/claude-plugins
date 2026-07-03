@@ -1,4 +1,4 @@
-node_modules/
-.pinpoint/
+**/node_modules/
+**/.pinpoint/
 *.log
 .DS_Store

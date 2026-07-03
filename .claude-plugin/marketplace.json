@@ -1,8 +1,15 @@
 {
-  "name": "pinpoint",
-  "description": "Marketplace hosting the pinpoint live-annotation plugin.",
+  "name": "mrvnklm",
+  "description": "Marvin von Spreckelsen's Claude Code plugins.",
   "owner": { "name": "Marvin von Spreckelsen", "url": "https://github.com/mrvnklm" },
   "plugins": [
-    { "name": "pinpoint", "source": "./", "description": "Live in-browser UI annotation → Claude Code.", "version": "0.1.0", "category": "devtools", "tags": ["channel","ui","annotation"] }
+    {
+      "name": "pinpoint",
+      "source": "./plugins/pinpoint",
+      "description": "Live in-browser UI annotation → Claude Code: click an element, type a note, and it streams into your running session with screenshot + CSS selector + URL.",
+      "version": "0.1.0",
+      "category": "devtools",
+      "tags": ["channel", "ui", "annotation", "browser", "frontend"]
+    }
   ]
 }
