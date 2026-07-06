@@ -1,6 +1,6 @@
 {
   "name": "pinpoint-claude",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Live browser UI annotation → Claude Code, via a Channels MCP bridge. Click an element in your dev app, type a note, and it streams into your running Claude Code session with screenshot + CSS selector + URL.",

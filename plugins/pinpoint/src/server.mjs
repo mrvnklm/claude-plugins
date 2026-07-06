@@ -1,11 +1,17 @@
 // pinpoint bridge: a stdio MCP server ("Channel") that also runs a localhost
 // HTTP listener used by the browser overlay to POST UI annotations.
 //
-// One-way channel (v1): annotations flow overlay -> bridge -> Claude Code as
-// <channel source="pinpoint"> tags. No replies back to the overlay.
+// Two-way channel (v0.2): task annotations flow overlay -> bridge -> Claude Code
+// as <channel source="pinpoint" kind="task"> tags; status updates flow back
+// Claude -> bridge -> overlay via the update_status MCP tool broadcast over a
+// GET /events SSE stream. Follow-ups flow overlay -> bridge -> Claude too.
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import {
+  ListToolsRequestSchema,
+  CallToolRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js'
 import { createServer } from 'node:http'
 import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
@@ -15,26 +21,35 @@ import { fileURLToPath } from 'node:url'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const MAX_BODY_BYTES = 12 * 1024 * 1024 // 12 MB — a base64 screenshot of a large element can be big
+const MAX_BODY_BYTES = 24 * 1024 * 1024 // 24 MB — a batch of JPEG screenshots can be big
 const MAX_PORT_PROBES = 20 // how many ports to try if the preferred one is taken
+const HEARTBEAT_MS = 25000 // SSE keep-alive comment interval
 
 // ---------------------------------------------------------------------------
 // MCP server declaring the channel capability. The `experimental` capability
-// key `claude/channel` is what makes Claude Code treat this as a Channel.
+// key `claude/channel` is what makes Claude Code treat this as a Channel. We
+// also declare `tools` so the update_status tool is exposed (two-way).
 // ---------------------------------------------------------------------------
 const mcp = new Server(
-  { name: 'pinpoint', version: '0.1.0' },
+  { name: 'pinpoint', version: '0.2.0' },
   {
-    capabilities: { experimental: { 'claude/channel': {} } },
+    capabilities: {
+      experimental: { 'claude/channel': {} },
+      tools: {},
+    },
     instructions:
-      'UI annotations from the pinpoint browser overlay arrive as ' +
-      '<channel source="pinpoint"> tags. For each tag: read the screenshot PNG ' +
-      'named in the "screenshot" attribute using the Read tool; use the ' +
-      '"selector", "url" and "source_hint" attributes to locate the right ' +
-      'component/source file (grep the selector or the source_hint path to find ' +
-      'it); then implement the fix the note asks for. When several tags arrive ' +
-      'together, treat them as one batch and handle them in order. This is a ' +
-      'one-way channel (v1): do not attempt to reply back to the overlay.',
+      'Task annotations from the pinpoint browser overlay arrive as ' +
+      '<channel source="pinpoint" kind="task" id=".." count="N" ...> tags. The ' +
+      'body has a shared task note followed by a numbered list of N elements, ' +
+      'each with a screenshot path, a CSS selector and a source hint. Read every ' +
+      'screenshot with the Read tool, use the selector/source hint to locate the ' +
+      'right component/source file (grep the selector or the source_hint path), ' +
+      'then apply the shared instruction across all N elements. Follow-ups arrive ' +
+      'as <channel source="pinpoint" kind="followup" task_id=".."> tags — continue ' +
+      'that task (its original task tag appears earlier in the session). ' +
+      'IMPORTANT: call the update_status tool with the task_id and status "working" ' +
+      'when you start and status "done" when finished (optionally a short note) — ' +
+      'that is the ONLY way the user\'s overlay shows progress.',
   }
 )
 
@@ -82,15 +97,16 @@ function persistConfig(actualPort) {
   }
 }
 
-// Seed the annotation id above any screenshot already on disk, so a restart
-// never clobbers a shot-<id>.png that a still-open <channel> tag references.
-let nextId = 1
+// Seed the task counter above any screenshot already on disk, so a restart
+// never clobbers a shot-<id>-<i>.jpg (or a legacy shot-<id>.png) that a still-
+// open <channel> tag references.
+let nextTaskId = 1
 try {
   const maxN = readdirSync(dir)
-    .map((f) => /^shot-(\d+)\.png$/.exec(f))
+    .map((f) => /^shot-(\d+)(?:-\d+)?\.(?:jpg|png)$/.exec(f))
     .filter(Boolean)
     .reduce((m, x) => Math.max(m, Number(x[1])), 0)
-  nextId = maxN + 1
+  nextTaskId = maxN + 1
 } catch {
   /* dir just created / unreadable — start at 1 */
 }
@@ -101,6 +117,60 @@ function tokenOk(provided) {
   const a = Buffer.from(provided)
   const b = Buffer.from(token)
   return a.length === b.length && timingSafeEqual(a, b)
+}
+
+// ---------------------------------------------------------------------------
+// MCP tools: update_status is the return path (Claude -> overlay).
+// ---------------------------------------------------------------------------
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: 'update_status',
+      description:
+        'Report progress on a pinpoint task back to the user\'s browser overlay. ' +
+        'Call with status "working" when you start and "done" when finished.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task_id: { type: 'string' },
+          status: {
+            type: 'string',
+            description: 'queued|working|done|blocked',
+          },
+          note: { type: 'string' },
+        },
+        required: ['task_id', 'status'],
+      },
+    },
+  ],
+}))
+
+mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const { name, arguments: args } = req.params
+  if (name === 'update_status') {
+    const task_id = args && args.task_id != null ? String(args.task_id) : ''
+    const status = args && args.status != null ? String(args.status) : ''
+    const note = args && typeof args.note === 'string' ? args.note : undefined
+    broadcast({ type: 'status', task_id, status, note })
+    return { content: [{ type: 'text', text: 'ok' }] }
+  }
+  return { content: [{ type: 'text', text: `unknown tool: ${name}` }], isError: true }
+})
+
+// ---------------------------------------------------------------------------
+// SSE fan-out: the overlay opens GET /events; update_status broadcasts to all.
+// ---------------------------------------------------------------------------
+const sseListeners = new Set()
+
+function broadcast(obj) {
+  const payload = `data: ${JSON.stringify(obj)}\n\n`
+  for (const res of sseListeners) {
+    try {
+      res.write(payload)
+    } catch {
+      /* a dead listener will fire 'close' and get removed */
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -143,6 +213,11 @@ function readBody(req) {
   })
 }
 
+// Coerce a value to a string, using a fallback for null/undefined/non-string.
+function str(v, fallback = '') {
+  return typeof v === 'string' ? v : v == null ? fallback : String(v)
+}
+
 // ---------------------------------------------------------------------------
 // HTTP server
 // ---------------------------------------------------------------------------
@@ -176,8 +251,39 @@ const http = createServer(async (req, res) => {
       return
     }
 
+    // ----- SSE stream: status updates flow back to the overlay -------------
+    if (method === 'GET' && url === '/events') {
+      res.writeHead(200, {
+        ...CORS,
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      })
+      // Never let node close this socket on idle.
+      if (typeof res.setTimeout === 'function') res.setTimeout(0)
+      if (req.socket && typeof req.socket.setTimeout === 'function') req.socket.setTimeout(0)
+      res.write(': connected\n\n')
+
+      const heartbeat = setInterval(() => {
+        try {
+          res.write(':ka\n\n')
+        } catch {
+          /* ignore — 'close' will clean up */
+        }
+      }, HEARTBEAT_MS)
+      if (typeof heartbeat.unref === 'function') heartbeat.unref()
+
+      sseListeners.add(res)
+      req.on('close', () => {
+        clearInterval(heartbeat)
+        sseListeners.delete(res)
+      })
+      return
+    }
+
+    // ----- Batch (or legacy single) annotation -> one channel task ---------
     if (method === 'POST' && url === '/annotation') {
-      // 1. Token gate.
       if (!tokenOk(req.headers['x-pinpoint-token'])) {
         sendJson(res, 403, { ok: false, error: 'forbidden' })
         return
@@ -203,42 +309,68 @@ const http = createServer(async (req, res) => {
         return
       }
 
-      const id = nextId++
-
-      // 2. Persist screenshot if present.
-      let screenshotPath
-      if (typeof data.screenshot === 'string' && data.screenshot.length > 0) {
-        try {
-          const b64 = data.screenshot.replace(/^data:image\/png;base64,/, '')
-          const buf = Buffer.from(b64, 'base64')
-          screenshotPath = join(dir, `shot-${id}.png`)
-          writeFileSync(screenshotPath, buf)
-        } catch (err) {
-          console.error('pinpoint: failed to write screenshot:', err)
-          screenshotPath = undefined
-        }
+      // Normalize batch vs legacy single into { task, items[] }.
+      let task
+      let items
+      if (Array.isArray(data.items)) {
+        task = str(data.task)
+        items = data.items
+      } else {
+        // Legacy single shape: the whole body is one item; note is the task.
+        task = str(data.note)
+        items = [data]
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        sendJson(res, 400, { ok: false, error: 'no items' })
+        return
       }
 
-      // 3. Build content + meta and notify Claude.
-      const note = typeof data.note === 'string' ? data.note : ''
-      const selector = typeof data.selector === 'string' ? data.selector : ''
-      const pageUrl = typeof data.url === 'string' ? data.url : ''
-      const title = typeof data.title === 'string' ? data.title : ''
-      const vw = data.viewport && typeof data.viewport === 'object' ? data.viewport : {}
-      const viewportStr = `${vw.w ?? ''}x${vw.h ?? ''}`
+      const taskId = nextTaskId++
 
-      const content = `${note}\n\n(pinpoint annotation on ${selector} at ${pageUrl})`
+      // Persist each item's screenshot as shot-<taskId>-<i>.jpg.
+      const shotPaths = items.map((item, i) => {
+        const shot = item && typeof item.screenshot === 'string' ? item.screenshot : ''
+        if (!shot) return undefined
+        try {
+          const b64 = shot.replace(/^data:image\/\w+;base64,/, '')
+          const buf = Buffer.from(b64, 'base64')
+          const p = join(dir, `shot-${taskId}-${i}.jpg`)
+          writeFileSync(p, buf)
+          return p
+        } catch (err) {
+          console.error(`pinpoint: failed to write screenshot for item ${i}:`, err)
+          return undefined
+        }
+      })
+
+      const N = items.length
+      const first = items[0] || {}
+      const firstVp = first.viewport && typeof first.viewport === 'object' ? first.viewport : {}
+      const firstViewport = `${firstVp.w ?? ''}x${firstVp.h ?? ''}`
+
+      // Build the numbered element list.
+      let lines = ''
+      items.forEach((item, i) => {
+        const selector = str(item && item.selector, '—') || '—'
+        const pageUrl = str(item && item.url, '—') || '—'
+        const source = str(item && item.sourceHint, '') || '—'
+        const shotPath = shotPaths[i] || '—'
+        lines += `${i + 1}. selector: ${selector} | url: ${pageUrl} | source: ${source} | screenshot: ${shotPath}\n`
+      })
+
+      const content =
+        `${task}\n\n` +
+        `Task #${taskId} — ${N} Element(e):\n` +
+        lines +
+        `\nRufe update_status({task_id:"${taskId}", status:"working"}) wenn du startest und status:"done" wenn fertig.`
 
       const meta = {
-        selector,
-        url: pageUrl,
-        title,
-        id: String(id),
-        viewport: viewportStr,
-      }
-      if (screenshotPath) meta.screenshot = screenshotPath
-      if (typeof data.sourceHint === 'string' && data.sourceHint.length > 0) {
-        meta.source_hint = data.sourceHint
+        id: String(taskId),
+        count: String(N),
+        url: str(first.url),
+        title: str(first.title),
+        viewport: firstViewport,
+        kind: 'task',
       }
 
       try {
@@ -251,8 +383,57 @@ const http = createServer(async (req, res) => {
         console.error('pinpoint: channel notification failed (no peer?):', err)
       }
 
-      // 4. Respond.
-      sendJson(res, 200, { ok: true, id })
+      sendJson(res, 200, { ok: true, task_id: String(taskId) })
+      return
+    }
+
+    // ----- Follow-up on an existing task -----------------------------------
+    if (method === 'POST' && url === '/followup') {
+      if (!tokenOk(req.headers['x-pinpoint-token'])) {
+        sendJson(res, 403, { ok: false, error: 'forbidden' })
+        return
+      }
+
+      let raw
+      try {
+        raw = await readBody(req)
+      } catch (err) {
+        sendJson(res, 400, { ok: false, error: 'read error' })
+        return
+      }
+      if (raw === TOO_LARGE) {
+        sendJson(res, 413, { ok: false, error: 'payload too large' })
+        return
+      }
+
+      let data
+      try {
+        data = JSON.parse(raw || '{}')
+      } catch (err) {
+        sendJson(res, 400, { ok: false, error: 'invalid json' })
+        return
+      }
+
+      const taskId = str(data.task_id)
+      const text = str(data.text)
+      if (!taskId || !text) {
+        sendJson(res, 400, { ok: false, error: 'task_id and text required' })
+        return
+      }
+
+      const content = `Follow-up zu Task #${taskId}:\n\n${text}`
+      const meta = { task_id: taskId, kind: 'followup' }
+
+      try {
+        await mcp.notification({
+          method: 'notifications/claude/channel',
+          params: { content, meta },
+        })
+      } catch (err) {
+        console.error('pinpoint: channel notification failed (no peer?):', err)
+      }
+
+      sendJson(res, 200, { ok: true })
       return
     }
 
@@ -323,6 +504,15 @@ let shuttingDown = false
 function shutdown() {
   if (shuttingDown) return
   shuttingDown = true
+  // Close any open SSE streams so http.close() can settle.
+  for (const res of sseListeners) {
+    try {
+      res.end()
+    } catch {
+      /* ignore */
+    }
+  }
+  sseListeners.clear()
   try {
     http.close()
   } catch {

@@ -7,7 +7,7 @@
       "name": "pinpoint",
       "source": "./plugins/pinpoint",
       "description": "Live in-browser UI annotation → Claude Code: click an element, type a note, and it streams into your running session with screenshot + CSS selector + URL.",
-      "version": "0.1.0",
+      "version": "0.2.0",
       "category": "devtools",
       "tags": ["channel", "ui", "annotation", "browser", "frontend"]
     }

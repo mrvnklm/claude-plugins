@@ -1070,9 +1070,9 @@
     context.drawImage(img, 0, 0, canvas.width, canvas.height);
     return canvas;
   }
-  async function toPng(node, options = {}) {
+  async function toJpeg(node, options = {}) {
     const canvas = await toCanvas(node, options);
-    return canvas.toDataURL();
+    return canvas.toDataURL("image/jpeg", options.quality || 1);
   }
 
   // src/overlay.js
@@ -1085,6 +1085,8 @@
     const cfg = readConfig();
     const base = `http://127.0.0.1:${cfg.port}`;
     const token = cfg.token;
+    const TASKS_KEY = "pinpoint.tasks";
+    const SOFT_LIMIT = 8;
     const host = document.createElement("div");
     host.id = "__pinpoint_host";
     host.style.cssText = "all: initial; position: fixed; z-index: 2147483647; top: 0; left: 0; width: 0; height: 0;";
@@ -1116,35 +1118,114 @@
         box-shadow: 0 0 0 1px rgba(0,0,0,.15);
       }
 
-      /* Note panel */
+      /* Panel */
       .panel {
-        position: fixed; bottom: 80px; right: 20px; width: 320px;
-        background: #fff; color: #111; border-radius: 10px;
+        position: fixed; bottom: 80px; right: 20px; width: 340px;
+        max-height: calc(100vh - 110px);
+        background: #fff; color: #111; border-radius: 12px;
         box-shadow: 0 8px 30px rgba(0,0,0,.28);
-        padding: 14px; z-index: 2147483647; display: none;
+        z-index: 2147483647; display: none;
         border: 1px solid rgba(0,0,0,.08);
+        overflow: hidden;
+        flex-direction: column;
       }
-      .panel h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: #374151; }
-      .panel .sel {
+      .panel.open { display: flex; }
+
+      .hd {
+        display: flex; align-items: center; gap: 8px;
+        padding: 10px 12px; border-bottom: 1px solid #eef0f2;
+      }
+      .hd .ttl { font-size: 13px; font-weight: 700; color: #111; flex: 0 0 auto; }
+      .hd .spacer { flex: 1 1 auto; }
+      .pick-toggle {
+        border: 1px solid #d1d5db; background: #fff; color: #374151;
+        border-radius: 999px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+        font-weight: 600;
+      }
+      .pick-toggle.on { background: #10b981; border-color: #10b981; color: #fff; }
+      .hd .x {
+        border: none; background: transparent; color: #9ca3af; cursor: pointer;
+        font-size: 15px; line-height: 1; padding: 2px 4px;
+      }
+      .hd .x:hover { color: #374151; }
+
+      .body { overflow-y: auto; padding: 12px; }
+
+      /* Cart */
+      .cart-count { font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 6px; }
+      .cart-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+      .cart-empty {
+        font-size: 12px; color: #9ca3af; padding: 10px; text-align: center;
+        border: 1px dashed #e5e7eb; border-radius: 8px;
+      }
+      .cart-item {
+        display: flex; align-items: center; gap: 8px;
+        background: #f9fafb; border: 1px solid #eef0f2; border-radius: 8px;
+        padding: 6px 8px;
+      }
+      .cart-item .idx {
+        flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+        background: #10b981; color: #fff; font-size: 10px; font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .cart-item .meta { flex: 1 1 auto; min-width: 0; }
+      .cart-item .sel {
         font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 11px; color: #6b7280; background: #f3f4f6;
-        padding: 4px 6px; border-radius: 4px; margin-bottom: 8px;
-        word-break: break-all; max-height: 46px; overflow: auto;
+        font-size: 11px; color: #374151; white-space: nowrap;
+        overflow: hidden; text-overflow: ellipsis;
       }
-      .panel textarea {
-        width: 100%; min-height: 90px; resize: vertical;
-        border: 1px solid #d1d5db; border-radius: 6px; padding: 8px;
+      .cart-item .sub { font-size: 10px; color: #9ca3af; }
+      .cart-item .rm {
+        flex: 0 0 auto; border: none; background: transparent; color: #9ca3af;
+        cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px;
+      }
+      .cart-item .rm:hover { color: #ef4444; }
+
+      textarea.task {
+        width: 100%; min-height: 72px; resize: vertical;
+        border: 1px solid #d1d5db; border-radius: 8px; padding: 8px;
         font-size: 13px; color: #111; outline: none; font-family: inherit;
       }
-      .panel textarea:focus { border-color: #10b981; }
+      textarea.task:focus { border-color: #10b981; }
+
       .row { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; }
       .btn {
-        border: none; border-radius: 6px; padding: 7px 14px;
-        font-size: 13px; cursor: pointer; font-weight: 500;
+        border: none; border-radius: 8px; padding: 7px 14px;
+        font-size: 13px; cursor: pointer; font-weight: 600;
       }
       .btn-primary { background: #10b981; color: #fff; }
-      .btn-primary:disabled { opacity: .6; cursor: default; }
+      .btn-primary:disabled { opacity: .5; cursor: default; }
       .btn-ghost { background: #f3f4f6; color: #374151; }
+
+      /* History */
+      .hist-sec { border-top: 1px solid #eef0f2; margin-top: 12px; padding-top: 10px; }
+      .hist-title { font-size: 11px; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; margin-bottom: 8px; }
+      .hist-empty { font-size: 12px; color: #9ca3af; }
+      .hist-list { display: flex; flex-direction: column; gap: 8px; }
+      .hist-row { border: 1px solid #eef0f2; border-radius: 8px; padding: 8px; }
+      .hist-main { display: flex; align-items: center; gap: 8px; }
+      .badge {
+        flex: 0 0 auto; font-size: 10px; font-weight: 700; border-radius: 999px;
+        padding: 2px 8px; text-transform: uppercase; letter-spacing: .03em;
+      }
+      .badge-queued  { background: #f3f4f6; color: #6b7280; }
+      .badge-working { background: #fef3c7; color: #b45309; }
+      .badge-done    { background: #d1fae5; color: #047857; }
+      .badge-blocked { background: #fee2e2; color: #b91c1c; }
+      .hist-note { flex: 1 1 auto; min-width: 0; font-size: 12px; color: #374151;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .hist-id { color: #9ca3af; font-weight: 600; }
+      .hist-fu { display: flex; gap: 6px; margin-top: 8px; }
+      .hist-fu input {
+        flex: 1 1 auto; min-width: 0; border: 1px solid #e5e7eb; border-radius: 6px;
+        padding: 5px 8px; font-size: 12px; color: #111; outline: none; font-family: inherit;
+      }
+      .hist-fu input:focus { border-color: #10b981; }
+      .btn-fu {
+        flex: 0 0 auto; border: none; background: #f3f4f6; color: #374151;
+        border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; font-weight: 700;
+      }
+      .btn-fu:hover { background: #e5e7eb; }
 
       /* Toast */
       .toast {
@@ -1152,22 +1233,36 @@
         background: #111; color: #fff; padding: 10px 16px; border-radius: 8px;
         font-size: 13px; z-index: 2147483647; opacity: 0;
         transition: opacity .2s; pointer-events: none;
-        box-shadow: 0 4px 14px rgba(0,0,0,.3);
+        box-shadow: 0 4px 14px rgba(0,0,0,.3); max-width: 320px;
       }
       .toast.show { opacity: 1; }
       .toast.err { background: #b91c1c; }
+      .toast.warn { background: #b45309; }
     </style>
 
     <button class="fab" title="Annotieren (Cmd/Ctrl+Shift+K)">\u25CE</button>
     <div class="highlight"></div>
 
     <div class="panel">
-      <h3>Notiz an Claude</h3>
-      <div class="sel"></div>
-      <textarea placeholder="Was stimmt hier nicht? \u2026"></textarea>
-      <div class="row">
-        <button class="btn btn-ghost" data-act="cancel">Abbrechen</button>
-        <button class="btn btn-primary" data-act="send">Senden</button>
+      <div class="hd">
+        <span class="ttl">Pinpoint</span>
+        <span class="spacer"></span>
+        <button class="pick-toggle" data-act="toggle-pick">Auswahl: AUS</button>
+        <button class="x" data-act="close" title="Schlie\xDFen">\u2715</button>
+      </div>
+      <div class="body">
+        <div class="cart-count"></div>
+        <div class="cart-list"></div>
+        <textarea class="task" placeholder="Was soll an diesen Elementen passieren? \u2026"></textarea>
+        <div class="row">
+          <button class="btn btn-ghost" data-act="cancel">Abbrechen</button>
+          <button class="btn btn-primary" data-act="send">Task senden (0)</button>
+        </div>
+
+        <div class="hist-sec">
+          <div class="hist-title">Verlauf</div>
+          <div class="hist-list"></div>
+        </div>
       </div>
     </div>
 
@@ -1176,17 +1271,42 @@
     const fab = root.querySelector(".fab");
     const highlight = root.querySelector(".highlight");
     const panel = root.querySelector(".panel");
-    const selLabel = root.querySelector(".panel .sel");
-    const textarea = root.querySelector(".panel textarea");
-    const toastEl = root.querySelector(".toast");
+    const pickToggle = root.querySelector('[data-act="toggle-pick"]');
+    const cartCountEl = root.querySelector(".cart-count");
+    const cartListEl = root.querySelector(".cart-list");
+    const textarea = root.querySelector("textarea.task");
     const sendBtn = root.querySelector('[data-act="send"]');
     const cancelBtn = root.querySelector('[data-act="cancel"]');
+    const closeBtn = root.querySelector('[data-act="close"]');
+    const histListEl = root.querySelector(".hist-list");
+    const toastEl = root.querySelector(".toast");
     let picking = false;
-    let captured = null;
+    let sending = false;
+    let uidSeq = 0;
+    let cart = [];
+    let tasks = loadTasks();
+    function isOpen() {
+      return panel.classList.contains("open");
+    }
+    function openPanel() {
+      panel.classList.add("open");
+      renderAll();
+      setPicking(true);
+    }
+    function closePanel() {
+      panel.classList.remove("open");
+      setPicking(false);
+    }
+    function togglePanel() {
+      if (isOpen()) closePanel();
+      else openPanel();
+    }
     function setPicking(on) {
       picking = on;
       fab.classList.toggle("active", on);
       fab.textContent = on ? "\u2715" : "\u25CE";
+      pickToggle.classList.toggle("on", on);
+      pickToggle.textContent = on ? "Auswahl: AN" : "Auswahl: AUS";
       document.documentElement.style.cursor = on ? "crosshair" : "";
       if (!on) hideHighlight();
     }
@@ -1213,7 +1333,7 @@
     function elementUnderCursor(x, y) {
       const prev = host.style.pointerEvents;
       host.style.pointerEvents = "none";
-      let el = document.elementFromPoint(x, y);
+      const el = document.elementFromPoint(x, y);
       host.style.pointerEvents = prev;
       if (!el || isOurs(el)) return null;
       return el;
@@ -1225,36 +1345,12 @@
       if (!el) return;
       e.preventDefault();
       e.stopPropagation();
-      captured = el;
-      setPicking(false);
-      openPanel(el);
+      addToCart(el);
     }
-    function openPanel(el) {
-      selLabel.textContent = safeSelector(el);
-      textarea.value = "";
-      panel.style.display = "block";
-      sendBtn.disabled = false;
-      sendBtn.textContent = "Senden";
-      setTimeout(() => textarea.focus(), 0);
-    }
-    function closePanel() {
-      panel.style.display = "none";
-      captured = null;
-    }
-    async function send() {
-      if (!captured) return;
-      const note = textarea.value.trim();
-      if (!note) {
-        textarea.focus();
-        return;
-      }
-      sendBtn.disabled = true;
-      sendBtn.textContent = "Sende \u2026";
-      const el = captured;
+    function addToCart(el) {
       const r = el.getBoundingClientRect();
-      const screenshot = await captureScreenshot(el);
-      const payload = {
-        note,
+      const item = {
+        uid: ++uidSeq,
         selector: safeSelector(el),
         url: location.href,
         title: document.title,
@@ -1268,37 +1364,58 @@
         domPath: buildDomPath(el),
         outerHtml: (el.outerHTML || "").slice(0, 2e3),
         sourceHint: el.closest("[data-v-inspector]")?.getAttribute("data-v-inspector") || void 0,
-        screenshot: screenshot || null
+        screenshot: null,
+        capturing: true
       };
-      try {
-        const res = await fetch(`${base}/annotation`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Pinpoint-Token": token
-          },
-          body: JSON.stringify(payload)
-        });
-        if (res.ok) {
-          closePanel();
-          toast("\u2713 an Claude gesendet");
-        } else {
-          toast(`Fehler: ${res.status}`, true);
-          sendBtn.disabled = false;
-          sendBtn.textContent = "Senden";
-        }
-      } catch (err) {
-        toast("Senden fehlgeschlagen", true);
-        sendBtn.disabled = false;
-        sendBtn.textContent = "Senden";
+      cart.push(item);
+      renderCart();
+      if (cart.length > SOFT_LIMIT) {
+        toast(`Viele Elemente (${cart.length}) \u2014 ggf. in mehrere Tasks aufteilen`, "warn");
       }
+      captureScreenshot(el).then((shot) => {
+        const live = cart.find((c) => c.uid === item.uid);
+        if (!live) return;
+        live.screenshot = shot || null;
+        live.capturing = false;
+        renderCart();
+      });
+    }
+    function removeFromCart(uid) {
+      cart = cart.filter((c) => c.uid !== uid);
+      renderCart();
+    }
+    function clearCart() {
+      cart = [];
+      renderCart();
+    }
+    function renderCart() {
+      const n = cart.length;
+      cartCountEl.textContent = n === 1 ? "1 Element" : `${n} Elemente`;
+      sendBtn.textContent = `Task senden (${n})`;
+      sendBtn.disabled = sending || n === 0;
+      if (n === 0) {
+        cartListEl.innerHTML = '<div class="cart-empty">Auswahl-Modus aktiv \u2014 klicke Elemente auf der Seite an.</div>';
+        return;
+      }
+      cartListEl.innerHTML = cart.map((c, i) => {
+        const sub = c.capturing ? "Screenshot \u2026" : c.screenshot ? "Screenshot \u2713" : "kein Screenshot";
+        return `
+          <div class="cart-item" data-uid="${c.uid}">
+            <span class="idx">${i + 1}</span>
+            <span class="meta">
+              <span class="sel">${escapeHtml(c.selector)}</span>
+              <span class="sub">${sub}</span>
+            </span>
+            <button class="rm" data-uid="${c.uid}" title="Entfernen">\u2715</button>
+          </div>`;
+      }).join("");
     }
     async function captureScreenshot(el) {
       try {
-        const shot = toPng(el, {
+        const shot = toJpeg(el, {
+          quality: 0.85,
           // Don't fetch/inline @font-face web fonts: on a real app that spams the
-          // host console with 404s (and slows capture) for no meaningful gain in
-          // an annotation screenshot. The element still renders with live fonts.
+          // host console with 404s for no meaningful gain in an annotation shot.
           skipFonts: true,
           // Skip our own overlay nodes if html-to-image ever walks up to them.
           filter: (node) => !isOurs(node)
@@ -1308,6 +1425,160 @@
       } catch {
         return null;
       }
+    }
+    async function send() {
+      if (sending) return;
+      if (cart.length === 0) return;
+      const taskText = textarea.value.trim();
+      if (!taskText) {
+        textarea.focus();
+        toast("Bitte eine Aufgabe eingeben", "warn");
+        return;
+      }
+      sending = true;
+      sendBtn.disabled = true;
+      sendBtn.textContent = "Sende \u2026";
+      const items = cart.map((c) => ({
+        selector: c.selector,
+        url: c.url,
+        title: c.title,
+        viewport: c.viewport,
+        rect: c.rect,
+        domPath: c.domPath,
+        outerHtml: c.outerHtml,
+        sourceHint: c.sourceHint,
+        screenshot: c.screenshot || void 0
+      }));
+      try {
+        const res = await fetch(`${base}/annotation`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Pinpoint-Token": token
+          },
+          body: JSON.stringify({ task: taskText, items })
+        });
+        if (res.ok) {
+          let taskId = "";
+          try {
+            const body = await res.json();
+            taskId = body && body.task_id != null ? String(body.task_id) : "";
+          } catch {
+          }
+          tasks.unshift({
+            id: taskId,
+            note: taskText,
+            count: items.length,
+            status: "queued",
+            ts: Date.now()
+          });
+          saveTasks();
+          clearCart();
+          textarea.value = "";
+          setPicking(false);
+          renderHistory();
+          toast(`\u2713 Task #${taskId || "?"} gesendet (${items.length})`);
+        } else {
+          toast(`Fehler: ${res.status}`, "err");
+        }
+      } catch {
+        toast("Senden fehlgeschlagen", "err");
+      } finally {
+        sending = false;
+        renderCart();
+      }
+    }
+    function renderHistory() {
+      if (!tasks.length) {
+        histListEl.innerHTML = '<div class="hist-empty">Noch keine Tasks gesendet.</div>';
+        return;
+      }
+      histListEl.innerHTML = tasks.map((t) => {
+        const status = normalizeStatus(t.status);
+        const idLabel = t.id ? `#${escapeHtml(String(t.id))} ` : "";
+        return `
+          <div class="hist-row" data-id="${escapeHtml(String(t.id))}">
+            <div class="hist-main">
+              <span class="badge badge-${status}">${status}</span>
+              <span class="hist-note"><span class="hist-id">${idLabel}</span>${escapeHtml(t.note || "")}</span>
+            </div>
+            <div class="hist-fu">
+              <input type="text" placeholder="Follow-up \u2026" data-id="${escapeHtml(String(t.id))}" />
+              <button class="btn-fu" data-id="${escapeHtml(String(t.id))}" title="Follow-up senden">\u2192</button>
+            </div>
+          </div>`;
+      }).join("");
+    }
+    async function sendFollowup(taskId, text, inputEl) {
+      const body = (text || "").trim();
+      if (!taskId || !body) return;
+      try {
+        const res = await fetch(`${base}/followup`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Pinpoint-Token": token
+          },
+          body: JSON.stringify({ task_id: String(taskId), text: body })
+        });
+        if (res.ok) {
+          if (inputEl) inputEl.value = "";
+          toast(`\u2713 Follow-up zu #${taskId} gesendet`);
+        } else {
+          toast(`Fehler: ${res.status}`, "err");
+        }
+      } catch {
+        toast("Follow-up fehlgeschlagen", "err");
+      }
+    }
+    function renderAll() {
+      renderCart();
+      renderHistory();
+    }
+    function connectStatus() {
+      let es;
+      try {
+        es = new EventSource(`${base}/events`);
+      } catch {
+        return;
+      }
+      es.onmessage = (ev) => {
+        let msg;
+        try {
+          msg = JSON.parse(ev.data);
+        } catch {
+          return;
+        }
+        if (!msg || msg.type !== "status" || msg.task_id == null) return;
+        const t = tasks.find((x) => String(x.id) === String(msg.task_id));
+        if (!t) return;
+        t.status = normalizeStatus(msg.status);
+        if (typeof msg.note === "string" && msg.note) t.statusNote = msg.note;
+        saveTasks();
+        renderHistory();
+      };
+      es.onerror = () => {
+      };
+    }
+    function loadTasks() {
+      try {
+        const raw = localStorage.getItem(TASKS_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      } catch {
+        return [];
+      }
+    }
+    function saveTasks() {
+      try {
+        if (tasks.length > 50) tasks = tasks.slice(0, 50);
+        localStorage.setItem(TASKS_KEY, JSON.stringify(tasks));
+      } catch {
+      }
+    }
+    function normalizeStatus(s) {
+      const v = String(s || "").toLowerCase();
+      return v === "working" || v === "done" || v === "blocked" ? v : "queued";
     }
     function safeSelector(el) {
       try {
@@ -1351,17 +1622,44 @@
       }
       return parts.join(" > ");
     }
+    function escapeHtml(s) {
+      return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
     let toastTimer = null;
-    function toast(msg, isError) {
+    function toast(msg, kind) {
       toastEl.textContent = msg;
-      toastEl.classList.toggle("err", !!isError);
+      toastEl.classList.remove("err", "warn");
+      if (kind === "err") toastEl.classList.add("err");
+      else if (kind === "warn") toastEl.classList.add("warn");
       toastEl.classList.add("show");
       clearTimeout(toastTimer);
-      toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600);
+      toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2800);
     }
-    fab.addEventListener("click", () => setPicking(!picking));
-    cancelBtn.addEventListener("click", closePanel);
+    fab.addEventListener("click", togglePanel);
+    closeBtn.addEventListener("click", closePanel);
+    pickToggle.addEventListener("click", () => setPicking(!picking));
+    cancelBtn.addEventListener("click", clearCart);
     sendBtn.addEventListener("click", send);
+    cartListEl.addEventListener("click", (e) => {
+      const rm = e.target.closest(".rm");
+      if (!rm) return;
+      const uid = Number(rm.getAttribute("data-uid"));
+      if (uid) removeFromCart(uid);
+    });
+    histListEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".btn-fu");
+      if (!btn) return;
+      const id = btn.getAttribute("data-id");
+      const input = histListEl.querySelector(`.hist-fu input[data-id="${cssEscape(id)}"]`);
+      sendFollowup(id, input ? input.value : "", input);
+    });
+    histListEl.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      const input = e.target.closest(".hist-fu input");
+      if (!input) return;
+      e.preventDefault();
+      sendFollowup(input.getAttribute("data-id"), input.value, input);
+    });
     textarea.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
         e.preventDefault();
@@ -1376,9 +1674,15 @@
     window.addEventListener("keydown", (e) => {
       if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === "k" || e.key === "K")) {
         e.preventDefault();
-        setPicking(!picking);
+        togglePanel();
       }
     }, true);
+    function cssEscape(v) {
+      const s = String(v);
+      if (window.CSS && typeof window.CSS.escape === "function") return window.CSS.escape(s);
+      return s.replace(/["\\\]]/g, "\\$&");
+    }
+    connectStatus();
   }
   function readConfig() {
     const ds = document.getElementById("pinpoint-overlay")?.dataset;

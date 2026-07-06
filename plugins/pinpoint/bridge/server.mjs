@@ -97,7 +97,7 @@ var require_code = __commonJS({
     }
     exports._ = _;
     var plus = new _Code("+");
-    function str(strs, ...args) {
+    function str2(strs, ...args) {
       const expr = [safeStringify(strs[0])];
       let i = 0;
       while (i < args.length) {
@@ -108,7 +108,7 @@ var require_code = __commonJS({
       optimize(expr);
       return new _Code(expr);
     }
-    exports.str = str;
+    exports.str = str2;
     function addCodeArg(code, arg) {
       if (arg instanceof _Code)
         code.push(...arg._items);
@@ -151,7 +151,7 @@ var require_code = __commonJS({
       return;
     }
     function strConcat(c1, c2) {
-      return c2.emptyStr() ? c1 : c1.emptyStr() ? c2 : str`${c1}${c2}`;
+      return c2.emptyStr() ? c1 : c1.emptyStr() ? c2 : str2`${c1}${c2}`;
     }
     exports.strConcat = strConcat;
     function interpolate(x) {
@@ -1113,22 +1113,22 @@ var require_util = __commonJS({
       return (0, codegen_1._)`${topSchemaRef}${schemaPath}${(0, codegen_1.getProperty)(keyword)}`;
     }
     exports.schemaRefOrVal = schemaRefOrVal;
-    function unescapeFragment(str) {
-      return unescapeJsonPointer(decodeURIComponent(str));
+    function unescapeFragment(str2) {
+      return unescapeJsonPointer(decodeURIComponent(str2));
     }
     exports.unescapeFragment = unescapeFragment;
-    function escapeFragment(str) {
-      return encodeURIComponent(escapeJsonPointer(str));
+    function escapeFragment(str2) {
+      return encodeURIComponent(escapeJsonPointer(str2));
     }
     exports.escapeFragment = escapeFragment;
-    function escapeJsonPointer(str) {
-      if (typeof str == "number")
-        return `${str}`;
-      return str.replace(/~/g, "~0").replace(/\//g, "~1");
+    function escapeJsonPointer(str2) {
+      if (typeof str2 == "number")
+        return `${str2}`;
+      return str2.replace(/~/g, "~0").replace(/\//g, "~1");
     }
     exports.escapeJsonPointer = escapeJsonPointer;
-    function unescapeJsonPointer(str) {
-      return str.replace(/~1/g, "/").replace(/~0/g, "~");
+    function unescapeJsonPointer(str2) {
+      return str2.replace(/~1/g, "/").replace(/~0/g, "~");
     }
     exports.unescapeJsonPointer = unescapeJsonPointer;
     function eachItem(xs, f) {
@@ -2153,8 +2153,8 @@ var require_json_schema_traverse = __commonJS({
         post(schema, jsonPtr, rootSchema, parentJsonPtr, parentKeyword, parentSchema, keyIndex);
       }
     }
-    function escapeJsonPtr(str) {
-      return str.replace(/~/g, "~0").replace(/\//g, "~1");
+    function escapeJsonPtr(str2) {
+      return str2.replace(/~/g, "~0").replace(/\//g, "~1");
     }
   }
 });
@@ -3218,10 +3218,10 @@ var require_utils = __commonJS({
         return { host, isIPV6: false };
       }
     }
-    function findToken(str, token2) {
+    function findToken(str2, token2) {
       let ind = 0;
-      for (let i = 0; i < str.length; i++) {
-        if (str[i] === token2) ind++;
+      for (let i = 0; i < str2.length; i++) {
+        if (str2[i] === token2) ind++;
       }
       return ind;
     }
@@ -3958,7 +3958,7 @@ var require_core = __commonJS({
     var util_1 = require_util();
     var $dataRefSchema = require_data();
     var uri_1 = require_uri();
-    var defaultRegExp = (str, flags) => new RegExp(str, flags);
+    var defaultRegExp = (str2, flags) => new RegExp(str2, flags);
     defaultRegExp.code = "new RegExp";
     var META_IGNORE_OPTIONS = ["removeAdditional", "useDefaults", "coerceTypes"];
     var EXT_SCOPE_NAMES = /* @__PURE__ */ new Set([
@@ -4753,16 +4753,16 @@ var require_ucs2length = __commonJS({
   "../../node_modules/ajv/dist/runtime/ucs2length.js"(exports) {
     "use strict";
     Object.defineProperty(exports, "__esModule", { value: true });
-    function ucs2length(str) {
-      const len = str.length;
+    function ucs2length(str2) {
+      const len = str2.length;
       let length = 0;
       let pos = 0;
       let value;
       while (pos < len) {
         length++;
-        value = str.charCodeAt(pos++);
+        value = str2.charCodeAt(pos++);
         if (value >= 55296 && value <= 56319 && pos < len) {
-          value = str.charCodeAt(pos);
+          value = str2.charCodeAt(pos);
           if ((value & 64512) === 56320)
             pos++;
         }
@@ -6645,8 +6645,8 @@ var require_formats = __commonJS({
     }
     var DATE = /^(\d\d\d\d)-(\d\d)-(\d\d)$/;
     var DAYS = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    function date3(str) {
-      const matches = DATE.exec(str);
+    function date3(str2) {
+      const matches = DATE.exec(str2);
       if (!matches)
         return false;
       const year = +matches[1];
@@ -6665,8 +6665,8 @@ var require_formats = __commonJS({
     }
     var TIME = /^(\d\d):(\d\d):(\d\d(?:\.\d+)?)(z|([+-])(\d\d)(?::?(\d\d))?)?$/i;
     function getTime(strictTimeZone) {
-      return function time3(str) {
-        const matches = TIME.exec(str);
+      return function time3(str2) {
+        const matches = TIME.exec(str2);
         if (!matches)
           return false;
         const hr = +matches[1];
@@ -6712,8 +6712,8 @@ var require_formats = __commonJS({
     var DATE_TIME_SEPARATOR = /t|\s/i;
     function getDateTime(strictTimeZone) {
       const time3 = getTime(strictTimeZone);
-      return function date_time(str) {
-        const dateTime = str.split(DATE_TIME_SEPARATOR);
+      return function date_time(str2) {
+        const dateTime = str2.split(DATE_TIME_SEPARATOR);
         return dateTime.length === 2 && date3(dateTime[0]) && time3(dateTime[1]);
       };
     }
@@ -6738,13 +6738,13 @@ var require_formats = __commonJS({
     }
     var NOT_URI_FRAGMENT = /\/|:/;
     var URI = /^(?:[a-z][a-z0-9+\-.]*:)(?:\/?\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:]|%[0-9a-f]{2})*@)?(?:\[(?:(?:(?:(?:[0-9a-f]{1,4}:){6}|::(?:[0-9a-f]{1,4}:){5}|(?:[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){4}|(?:(?:[0-9a-f]{1,4}:){0,1}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){3}|(?:(?:[0-9a-f]{1,4}:){0,2}[0-9a-f]{1,4})?::(?:[0-9a-f]{1,4}:){2}|(?:(?:[0-9a-f]{1,4}:){0,3}[0-9a-f]{1,4})?::[0-9a-f]{1,4}:|(?:(?:[0-9a-f]{1,4}:){0,4}[0-9a-f]{1,4})?::)(?:[0-9a-f]{1,4}:[0-9a-f]{1,4}|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?))|(?:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4})?::[0-9a-f]{1,4}|(?:(?:[0-9a-f]{1,4}:){0,6}[0-9a-f]{1,4})?::)|[Vv][0-9a-f]+\.[a-z0-9\-._~!$&'()*+,;=:]+)\]|(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)|(?:[a-z0-9\-._~!$&'()*+,;=]|%[0-9a-f]{2})*)(?::\d*)?(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*|\/(?:(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)?|(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})+(?:\/(?:[a-z0-9\-._~!$&'()*+,;=:@]|%[0-9a-f]{2})*)*)(?:\?(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?(?:#(?:[a-z0-9\-._~!$&'()*+,;=:@/?]|%[0-9a-f]{2})*)?$/i;
-    function uri(str) {
-      return NOT_URI_FRAGMENT.test(str) && URI.test(str);
+    function uri(str2) {
+      return NOT_URI_FRAGMENT.test(str2) && URI.test(str2);
     }
     var BYTE = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/gm;
-    function byte(str) {
+    function byte(str2) {
       BYTE.lastIndex = 0;
-      return BYTE.test(str);
+      return BYTE.test(str2);
     }
     var MIN_INT32 = -(2 ** 31);
     var MAX_INT32 = 2 ** 31 - 1;
@@ -6758,11 +6758,11 @@ var require_formats = __commonJS({
       return true;
     }
     var Z_ANCHOR = /[^\\]\\Z/;
-    function regex(str) {
-      if (Z_ANCHOR.test(str))
+    function regex(str2) {
+      if (Z_ANCHOR.test(str2))
         return false;
       try {
-        new RegExp(str);
+        new RegExp(str2);
         return true;
       } catch (e) {
         return false;
@@ -7144,14 +7144,14 @@ function promiseAllObject(promisesObj) {
 }
 function randomString(length = 10) {
   const chars = "abcdefghijklmnopqrstuvwxyz";
-  let str = "";
+  let str2 = "";
   for (let i = 0; i < length; i++) {
-    str += chars[Math.floor(Math.random() * chars.length)];
+    str2 += chars[Math.floor(Math.random() * chars.length)];
   }
-  return str;
+  return str2;
 }
-function esc(str) {
-  return JSON.stringify(str);
+function esc(str2) {
+  return JSON.stringify(str2);
 }
 function slugify(input) {
   return input.toLowerCase().trim().replace(/[^\w\s-]/g, "").replace(/[\s_-]+/g, "-").replace(/^-+|-+$/g, "");
@@ -7265,8 +7265,8 @@ var primitiveTypes = /* @__PURE__ */ new Set([
   "symbol",
   "undefined"
 ]);
-function escapeRegex(str) {
-  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function escapeRegex(str2) {
+  return str2.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 function clone(inst, def, params) {
   const cl = new inst._zod.constr(def ?? inst._zod.def);
@@ -15459,13 +15459,17 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 var __filename = fileURLToPath(import.meta.url);
 var __dirname = dirname(__filename);
-var MAX_BODY_BYTES = 12 * 1024 * 1024;
+var MAX_BODY_BYTES = 24 * 1024 * 1024;
 var MAX_PORT_PROBES = 20;
+var HEARTBEAT_MS = 25e3;
 var mcp = new Server(
-  { name: "pinpoint", version: "0.1.0" },
+  { name: "pinpoint", version: "0.2.0" },
   {
-    capabilities: { experimental: { "claude/channel": {} } },
-    instructions: 'UI annotations from the pinpoint browser overlay arrive as <channel source="pinpoint"> tags. For each tag: read the screenshot PNG named in the "screenshot" attribute using the Read tool; use the "selector", "url" and "source_hint" attributes to locate the right component/source file (grep the selector or the source_hint path to find it); then implement the fix the note asks for. When several tags arrive together, treat them as one batch and handle them in order. This is a one-way channel (v1): do not attempt to reply back to the overlay.'
+    capabilities: {
+      experimental: { "claude/channel": {} },
+      tools: {}
+    },
+    instructions: `Task annotations from the pinpoint browser overlay arrive as <channel source="pinpoint" kind="task" id=".." count="N" ...> tags. The body has a shared task note followed by a numbered list of N elements, each with a screenshot path, a CSS selector and a source hint. Read every screenshot with the Read tool, use the selector/source hint to locate the right component/source file (grep the selector or the source_hint path), then apply the shared instruction across all N elements. Follow-ups arrive as <channel source="pinpoint" kind="followup" task_id=".."> tags \u2014 continue that task (its original task tag appears earlier in the session). IMPORTANT: call the update_status tool with the task_id and status "working" when you start and status "done" when finished (optionally a short note) \u2014 that is the ONLY way the user's overlay shows progress.`
   }
 );
 var cwd = process.cwd();
@@ -15502,10 +15506,10 @@ function persistConfig(actualPort) {
     console.error("pinpoint: failed to write config.json:", err);
   }
 }
-var nextId = 1;
+var nextTaskId = 1;
 try {
-  const maxN = readdirSync(dir).map((f) => /^shot-(\d+)\.png$/.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0);
-  nextId = maxN + 1;
+  const maxN = readdirSync(dir).map((f) => /^shot-(\d+)(?:-\d+)?\.(?:jpg|png)$/.exec(f)).filter(Boolean).reduce((m, x) => Math.max(m, Number(x[1])), 0);
+  nextTaskId = maxN + 1;
 } catch {
 }
 function tokenOk(provided) {
@@ -15513,6 +15517,49 @@ function tokenOk(provided) {
   const a = Buffer.from(provided);
   const b = Buffer.from(token);
   return a.length === b.length && timingSafeEqual(a, b);
+}
+mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
+  tools: [
+    {
+      name: "update_status",
+      description: `Report progress on a pinpoint task back to the user's browser overlay. Call with status "working" when you start and "done" when finished.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          task_id: { type: "string" },
+          status: {
+            type: "string",
+            description: "queued|working|done|blocked"
+          },
+          note: { type: "string" }
+        },
+        required: ["task_id", "status"]
+      }
+    }
+  ]
+}));
+mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
+  const { name, arguments: args } = req.params;
+  if (name === "update_status") {
+    const task_id = args && args.task_id != null ? String(args.task_id) : "";
+    const status = args && args.status != null ? String(args.status) : "";
+    const note = args && typeof args.note === "string" ? args.note : void 0;
+    broadcast({ type: "status", task_id, status, note });
+    return { content: [{ type: "text", text: "ok" }] };
+  }
+  return { content: [{ type: "text", text: `unknown tool: ${name}` }], isError: true };
+});
+var sseListeners = /* @__PURE__ */ new Set();
+function broadcast(obj) {
+  const payload = `data: ${JSON.stringify(obj)}
+
+`;
+  for (const res of sseListeners) {
+    try {
+      res.write(payload);
+    } catch {
+    }
+  }
 }
 var CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -15543,6 +15590,9 @@ function readBody(req) {
     req.on("error", reject);
   });
 }
+function str(v, fallback = "") {
+  return typeof v === "string" ? v : v == null ? fallback : String(v);
+}
 var http = createServer(async (req, res) => {
   try {
     const method = req.method || "GET";
@@ -15568,6 +15618,31 @@ var http = createServer(async (req, res) => {
       }
       return;
     }
+    if (method === "GET" && url === "/events") {
+      res.writeHead(200, {
+        ...CORS,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no"
+      });
+      if (typeof res.setTimeout === "function") res.setTimeout(0);
+      if (req.socket && typeof req.socket.setTimeout === "function") req.socket.setTimeout(0);
+      res.write(": connected\n\n");
+      const heartbeat = setInterval(() => {
+        try {
+          res.write(":ka\n\n");
+        } catch {
+        }
+      }, HEARTBEAT_MS);
+      if (typeof heartbeat.unref === "function") heartbeat.unref();
+      sseListeners.add(res);
+      req.on("close", () => {
+        clearInterval(heartbeat);
+        sseListeners.delete(res);
+      });
+      return;
+    }
     if (method === "POST" && url === "/annotation") {
       if (!tokenOk(req.headers["x-pinpoint-token"])) {
         sendJson(res, 403, { ok: false, error: "forbidden" });
@@ -15591,39 +15666,60 @@ var http = createServer(async (req, res) => {
         sendJson(res, 400, { ok: false, error: "invalid json" });
         return;
       }
-      const id = nextId++;
-      let screenshotPath;
-      if (typeof data.screenshot === "string" && data.screenshot.length > 0) {
+      let task;
+      let items;
+      if (Array.isArray(data.items)) {
+        task = str(data.task);
+        items = data.items;
+      } else {
+        task = str(data.note);
+        items = [data];
+      }
+      if (!Array.isArray(items) || items.length === 0) {
+        sendJson(res, 400, { ok: false, error: "no items" });
+        return;
+      }
+      const taskId = nextTaskId++;
+      const shotPaths = items.map((item, i) => {
+        const shot = item && typeof item.screenshot === "string" ? item.screenshot : "";
+        if (!shot) return void 0;
         try {
-          const b64 = data.screenshot.replace(/^data:image\/png;base64,/, "");
+          const b64 = shot.replace(/^data:image\/\w+;base64,/, "");
           const buf = Buffer.from(b64, "base64");
-          screenshotPath = join(dir, `shot-${id}.png`);
-          writeFileSync(screenshotPath, buf);
+          const p = join(dir, `shot-${taskId}-${i}.jpg`);
+          writeFileSync(p, buf);
+          return p;
         } catch (err) {
-          console.error("pinpoint: failed to write screenshot:", err);
-          screenshotPath = void 0;
+          console.error(`pinpoint: failed to write screenshot for item ${i}:`, err);
+          return void 0;
         }
-      }
-      const note = typeof data.note === "string" ? data.note : "";
-      const selector = typeof data.selector === "string" ? data.selector : "";
-      const pageUrl = typeof data.url === "string" ? data.url : "";
-      const title = typeof data.title === "string" ? data.title : "";
-      const vw = data.viewport && typeof data.viewport === "object" ? data.viewport : {};
-      const viewportStr = `${vw.w ?? ""}x${vw.h ?? ""}`;
-      const content = `${note}
+      });
+      const N = items.length;
+      const first = items[0] || {};
+      const firstVp = first.viewport && typeof first.viewport === "object" ? first.viewport : {};
+      const firstViewport = `${firstVp.w ?? ""}x${firstVp.h ?? ""}`;
+      let lines = "";
+      items.forEach((item, i) => {
+        const selector = str(item && item.selector, "\u2014") || "\u2014";
+        const pageUrl = str(item && item.url, "\u2014") || "\u2014";
+        const source = str(item && item.sourceHint, "") || "\u2014";
+        const shotPath = shotPaths[i] || "\u2014";
+        lines += `${i + 1}. selector: ${selector} | url: ${pageUrl} | source: ${source} | screenshot: ${shotPath}
+`;
+      });
+      const content = `${task}
 
-(pinpoint annotation on ${selector} at ${pageUrl})`;
+Task #${taskId} \u2014 ${N} Element(e):
+` + lines + `
+Rufe update_status({task_id:"${taskId}", status:"working"}) wenn du startest und status:"done" wenn fertig.`;
       const meta2 = {
-        selector,
-        url: pageUrl,
-        title,
-        id: String(id),
-        viewport: viewportStr
+        id: String(taskId),
+        count: String(N),
+        url: str(first.url),
+        title: str(first.title),
+        viewport: firstViewport,
+        kind: "task"
       };
-      if (screenshotPath) meta2.screenshot = screenshotPath;
-      if (typeof data.sourceHint === "string" && data.sourceHint.length > 0) {
-        meta2.source_hint = data.sourceHint;
-      }
       try {
         await mcp.notification({
           method: "notifications/claude/channel",
@@ -15632,7 +15728,51 @@ var http = createServer(async (req, res) => {
       } catch (err) {
         console.error("pinpoint: channel notification failed (no peer?):", err);
       }
-      sendJson(res, 200, { ok: true, id });
+      sendJson(res, 200, { ok: true, task_id: String(taskId) });
+      return;
+    }
+    if (method === "POST" && url === "/followup") {
+      if (!tokenOk(req.headers["x-pinpoint-token"])) {
+        sendJson(res, 403, { ok: false, error: "forbidden" });
+        return;
+      }
+      let raw;
+      try {
+        raw = await readBody(req);
+      } catch (err) {
+        sendJson(res, 400, { ok: false, error: "read error" });
+        return;
+      }
+      if (raw === TOO_LARGE) {
+        sendJson(res, 413, { ok: false, error: "payload too large" });
+        return;
+      }
+      let data;
+      try {
+        data = JSON.parse(raw || "{}");
+      } catch (err) {
+        sendJson(res, 400, { ok: false, error: "invalid json" });
+        return;
+      }
+      const taskId = str(data.task_id);
+      const text = str(data.text);
+      if (!taskId || !text) {
+        sendJson(res, 400, { ok: false, error: "task_id and text required" });
+        return;
+      }
+      const content = `Follow-up zu Task #${taskId}:
+
+${text}`;
+      const meta2 = { task_id: taskId, kind: "followup" };
+      try {
+        await mcp.notification({
+          method: "notifications/claude/channel",
+          params: { content, meta: meta2 }
+        });
+      } catch (err) {
+        console.error("pinpoint: channel notification failed (no peer?):", err);
+      }
+      sendJson(res, 200, { ok: true });
       return;
     }
     sendJson(res, 404, { ok: false, error: "not found" });
@@ -15685,6 +15825,13 @@ var shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  for (const res of sseListeners) {
+    try {
+      res.end();
+    } catch {
+    }
+  }
+  sseListeners.clear();
   try {
     http.close();
   } catch {
