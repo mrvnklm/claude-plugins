@@ -2034,6 +2034,20 @@
       const box = cartHlEl.querySelector(`.cart-hl[data-uid="${uid}"]`);
       if (box) box.classList.toggle("emph", on);
     }
+    function effectiveBg(el) {
+      const opaque = (c) => c && c !== "transparent" && !/,\s*0\)\s*$/.test(c);
+      let node = el;
+      while (node && node.nodeType === 1) {
+        const bg = getComputedStyle(node).backgroundColor;
+        if (opaque(bg)) return bg;
+        node = node.parentElement;
+      }
+      const bodyBg = getComputedStyle(document.body).backgroundColor;
+      if (opaque(bodyBg)) return bodyBg;
+      const htmlBg = getComputedStyle(document.documentElement).backgroundColor;
+      if (opaque(htmlBg)) return htmlBg;
+      return "#ffffff";
+    }
     async function captureScreenshot(el) {
       try {
         const shot = toJpeg(el, {
@@ -2041,6 +2055,9 @@
           // Near-native but capped at 2× so a 3×/HiDPI display can't blow the
           // bridge's 24 MB body cap.
           pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+          // Fill transparent regions with the element's real (inherited) background
+          // instead of JPEG's default black — matches the app, light or dark.
+          backgroundColor: effectiveBg(el),
           // Don't fetch/inline @font-face web fonts (spams the host console with 404s).
           skipFonts: true,
           filter: (node) => !isOurs(node)
@@ -2393,12 +2410,12 @@
     function loadFabPos() {
       try {
         const o = JSON.parse(localStorage.getItem(FAB_KEY) || "null");
-        const side = o && (o.side === "left" || o.side === "right") ? o.side : "left";
+        const side = o && (o.side === "left" || o.side === "right") ? o.side : "right";
         let top = o && typeof o.top === "number" ? o.top : 0.6;
         if (!(top >= 0 && top <= 1)) top = 0.6;
         return { side, top };
       } catch {
-        return { side: "left", top: 0.6 };
+        return { side: "right", top: 0.6 };
       }
     }
     function saveFabPos() {
