@@ -59,6 +59,19 @@ Point the user to [`docs/injection.md`](../../docs/injection.md) for Vite and
 plain-HTML snippets. In every case the injected `<script>` must be **guarded so
 it NEVER loads in production** (dev-only env check or localhost hostname check).
 
+## Reliable delivery — `get_inbox`
+
+Live channel pushes are fire-and-forget: a task can be missed if the plugin is
+still loading or the session was launched without the channel flag. Every
+accepted task/follow-up is therefore also persisted to `.pinpoint/inbox.jsonl`,
+and the `mcp__pinpoint__get_inbox` tool drains it. **Call `get_inbox` at session
+start and whenever the user asks whether a task arrived** — it returns any queued
+records in the same content format as the tags (with screenshot paths) and marks
+returned pending records delivered so a later call won't repeat them. Pass
+`{ include_delivered: true }` to replay everything without changing state.
+Because it is a normal MCP tool call, `get_inbox` works even without the
+`--dangerously-load-development-channels` flag — it is the reliable path.
+
 ## Workflow — handling a `<channel source="pinpoint">` tag
 
 ### A task tag (`kind="task"`)

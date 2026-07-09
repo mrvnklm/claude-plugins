@@ -13,7 +13,7 @@ import {
   CallToolRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js'
 import { createServer } from 'node:http'
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from 'node:fs'
+import { readFileSync, existsSync, mkdirSync, writeFileSync, appendFileSync, readdirSync } from 'node:fs'
 import { randomUUID, timingSafeEqual } from 'node:crypto'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -31,7 +31,7 @@ const HEARTBEAT_MS = 25000 // SSE keep-alive comment interval
 // also declare `tools` so the update_status tool is exposed (two-way).
 // ---------------------------------------------------------------------------
 const mcp = new Server(
-  { name: 'pinpoint', version: '0.2.0' },
+  { name: 'pinpoint', version: '0.4.0' },
   {
     capabilities: {
       experimental: { 'claude/channel': {} },
@@ -49,7 +49,12 @@ const mcp = new Server(
       'that task (its original task tag appears earlier in the session). ' +
       'IMPORTANT: call the update_status tool with the task_id and status "working" ' +
       'when you start and status "done" when finished (optionally a short note) — ' +
-      'that is the ONLY way the user\'s overlay shows progress.',
+      'that is the ONLY way the user\'s overlay shows progress. ' +
+      'Live channel pushes can be missed (plugin still loading, or the session ' +
+      'launched without the development-channels flag), so ALSO call the get_inbox ' +
+      'tool at session start and whenever the user asks whether a task arrived: it ' +
+      'returns any queued tasks/follow-ups (same content format as the tags) that ' +
+      'you may not have received live, and marks them delivered.',
   }
 )
 
@@ -111,6 +116,90 @@ try {
   /* dir just created / unreadable — start at 1 */
 }
 
+// ---------------------------------------------------------------------------
+// Disk-backed inbox — the live-delivery safety net.
+//
+// mcp.notification() is fire-and-forget: if no channel consumer is attached at
+// that instant (plugin still loading, or the session launched without
+// --dangerously-load-development-channels) the task is silently lost. So every
+// accepted /annotation and /followup is ALSO appended here as one JSON line, and
+// the get_inbox MCP tool — a normal request/response call that works even
+// WITHOUT the channel flag — drains the pending records. This is the reliable
+// path; the live push stays as the happy-path fast lane.
+//
+// Lives under .pinpoint/ which is already git-ignored ('*'), so screenshots
+// referenced by content never leak into version control.
+// ---------------------------------------------------------------------------
+const INBOX_MAX = 200 // bound both the file and the in-memory mirror to the last N
+const inboxPath = join(dir, 'inbox.jsonl')
+let inbox = [] // in-memory mirror of the records on disk
+
+// Rewrite the whole file from the mirror. Used after trimming to the bound and
+// after marking records delivered (an in-place flag flip needs a full rewrite).
+function rewriteInbox() {
+  try {
+    writeFileSync(inboxPath, inbox.map((r) => JSON.stringify(r)).join('\n') + (inbox.length ? '\n' : ''))
+  } catch (err) {
+    console.error('pinpoint: failed to rewrite inbox.jsonl:', err)
+  }
+}
+
+// Load the mirror on boot. A crash mid-append can leave a corrupt/partial
+// trailing line — skip any line that won't parse, never crash startup.
+function loadInbox() {
+  if (!existsSync(inboxPath)) return
+  let text
+  try {
+    text = readFileSync(inboxPath, 'utf8')
+  } catch (err) {
+    console.error('pinpoint: could not read inbox.jsonl:', err)
+    return
+  }
+  const recs = []
+  for (const line of text.split('\n')) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    try {
+      const rec = JSON.parse(trimmed)
+      if (rec && typeof rec === 'object') recs.push(rec)
+    } catch {
+      /* corrupt/partial line — skip it */
+    }
+  }
+  if (recs.length > INBOX_MAX) {
+    // File grew past the bound (or was hand-appended) — keep the tail, rewrite.
+    inbox = recs.slice(-INBOX_MAX)
+    rewriteInbox()
+  } else {
+    inbox = recs
+  }
+}
+
+// Append one accepted task/follow-up. Cheap O(1) append in the common case; a
+// full rewrite only when we cross the bound and have to drop the oldest.
+function appendInbox(rec) {
+  inbox.push(rec)
+  if (inbox.length > INBOX_MAX) {
+    inbox = inbox.slice(-INBOX_MAX)
+    rewriteInbox()
+  } else {
+    try {
+      appendFileSync(inboxPath, JSON.stringify(rec) + '\n')
+    } catch (err) {
+      console.error('pinpoint: failed to append inbox.jsonl:', err)
+    }
+  }
+}
+
+// Render one record for get_inbox in the SAME content format the channel tags
+// carry, prefixed with its id/kind so Claude can act on it identically (the
+// screenshot paths are already inside rec.content).
+function renderInboxRecord(rec) {
+  return `[pinpoint id=${str(rec.id)} kind=${str(rec.kind)}]\n${str(rec.content)}`
+}
+
+loadInbox()
+
 // Constant-time token comparison (avoids a timing side channel on the gate).
 function tokenOk(provided) {
   if (typeof provided !== 'string') return false
@@ -142,6 +231,25 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         required: ['task_id', 'status'],
       },
     },
+    {
+      name: 'get_inbox',
+      description:
+        'Drain the pinpoint inbox: return any pinpoint tasks/follow-ups that were ' +
+        'queued (including ones that may have been missed by the live channel push) ' +
+        'in the same content format as the channel tags. Call this at session start ' +
+        'and whenever the user asks whether a task arrived. Returned pending records ' +
+        'are marked delivered so a later call does not repeat them.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          include_delivered: {
+            type: 'boolean',
+            description:
+              'Include already-delivered records too (default false = pending only).',
+          },
+        },
+      },
+    },
   ],
 }))
 
@@ -153,6 +261,37 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     const note = args && typeof args.note === 'string' ? args.note : undefined
     broadcast({ type: 'status', task_id, status, note })
     return { content: [{ type: 'text', text: 'ok' }] }
+  }
+  if (name === 'get_inbox') {
+    const includeDelivered = !!(args && args.include_delivered)
+    // Snapshot the selected records first so we mark exactly what we return.
+    const selected = inbox.filter((r) => includeDelivered || !r.delivered)
+    if (selected.length === 0) {
+      return {
+        content: [
+          {
+            type: 'text',
+            text: includeDelivered
+              ? 'pinpoint inbox is empty.'
+              : 'No pending pinpoint tasks — the inbox is drained.',
+          },
+        ],
+      }
+    }
+    const body = selected.map(renderInboxRecord).join('\n\n---\n\n')
+    const text = `${selected.length} pinpoint inbox record(s):\n\n${body}`
+    // Side effect: mark the pending records we just handed over as delivered so
+    // the next drain does not repeat them. include_delivered replays without
+    // changing state for anything already delivered.
+    let changed = false
+    for (const r of selected) {
+      if (!r.delivered) {
+        r.delivered = true
+        changed = true
+      }
+    }
+    if (changed) rewriteInbox()
+    return { content: [{ type: 'text', text }] }
   }
   return { content: [{ type: 'text', text: `unknown tool: ${name}` }], isError: true }
 })
@@ -373,13 +512,18 @@ const http = createServer(async (req, res) => {
         kind: 'task',
       }
 
+      // Safety net first: persist BEFORE the live push so a task is never lost
+      // even if the notification (or this process) dies right after.
+      appendInbox({ id: String(taskId), kind: 'task', content, meta, ts: Date.now(), delivered: false })
+
       try {
         await mcp.notification({
           method: 'notifications/claude/channel',
           params: { content, meta },
         })
       } catch (err) {
-        // No Claude peer connected (e.g. standalone smoke test) — fine.
+        // No Claude peer connected (e.g. standalone smoke test) — fine, the
+        // inbox record above still lets get_inbox deliver it later.
         console.error('pinpoint: channel notification failed (no peer?):', err)
       }
 
@@ -423,6 +567,11 @@ const http = createServer(async (req, res) => {
 
       const content = `Follow-up zu Task #${taskId}:\n\n${text}`
       const meta = { task_id: taskId, kind: 'followup' }
+
+      // Safety net first (see /annotation). id references the parent task_id;
+      // the delivered flag — not the id — is what dedups drains, so reusing the
+      // task_id here is safe even with several follow-ups on the same task.
+      appendInbox({ id: taskId, kind: 'followup', content, meta, ts: Date.now(), delivered: false })
 
       try {
         await mcp.notification({

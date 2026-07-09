@@ -15453,7 +15453,7 @@ var StdioServerTransport = class {
 
 // src/server.mjs
 import { createServer } from "node:http";
-import { readFileSync, existsSync, mkdirSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, existsSync, mkdirSync, writeFileSync, appendFileSync, readdirSync } from "node:fs";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15463,13 +15463,13 @@ var MAX_BODY_BYTES = 24 * 1024 * 1024;
 var MAX_PORT_PROBES = 20;
 var HEARTBEAT_MS = 25e3;
 var mcp = new Server(
-  { name: "pinpoint", version: "0.2.0" },
+  { name: "pinpoint", version: "0.4.0" },
   {
     capabilities: {
       experimental: { "claude/channel": {} },
       tools: {}
     },
-    instructions: `Task annotations from the pinpoint browser overlay arrive as <channel source="pinpoint" kind="task" id=".." count="N" ...> tags. The body has a shared task note followed by a numbered list of N elements, each with a screenshot path, a CSS selector and a source hint. Read every screenshot with the Read tool, use the selector/source hint to locate the right component/source file (grep the selector or the source_hint path), then apply the shared instruction across all N elements. Follow-ups arrive as <channel source="pinpoint" kind="followup" task_id=".."> tags \u2014 continue that task (its original task tag appears earlier in the session). IMPORTANT: call the update_status tool with the task_id and status "working" when you start and status "done" when finished (optionally a short note) \u2014 that is the ONLY way the user's overlay shows progress.`
+    instructions: `Task annotations from the pinpoint browser overlay arrive as <channel source="pinpoint" kind="task" id=".." count="N" ...> tags. The body has a shared task note followed by a numbered list of N elements, each with a screenshot path, a CSS selector and a source hint. Read every screenshot with the Read tool, use the selector/source hint to locate the right component/source file (grep the selector or the source_hint path), then apply the shared instruction across all N elements. Follow-ups arrive as <channel source="pinpoint" kind="followup" task_id=".."> tags \u2014 continue that task (its original task tag appears earlier in the session). IMPORTANT: call the update_status tool with the task_id and status "working" when you start and status "done" when finished (optionally a short note) \u2014 that is the ONLY way the user's overlay shows progress. Live channel pushes can be missed (plugin still loading, or the session launched without the development-channels flag), so ALSO call the get_inbox tool at session start and whenever the user asks whether a task arrived: it returns any queued tasks/follow-ups (same content format as the tags) that you may not have received live, and marks them delivered.`
   }
 );
 var cwd = process.cwd();
@@ -15512,6 +15512,60 @@ try {
   nextTaskId = maxN + 1;
 } catch {
 }
+var INBOX_MAX = 200;
+var inboxPath = join(dir, "inbox.jsonl");
+var inbox = [];
+function rewriteInbox() {
+  try {
+    writeFileSync(inboxPath, inbox.map((r) => JSON.stringify(r)).join("\n") + (inbox.length ? "\n" : ""));
+  } catch (err) {
+    console.error("pinpoint: failed to rewrite inbox.jsonl:", err);
+  }
+}
+function loadInbox() {
+  if (!existsSync(inboxPath)) return;
+  let text;
+  try {
+    text = readFileSync(inboxPath, "utf8");
+  } catch (err) {
+    console.error("pinpoint: could not read inbox.jsonl:", err);
+    return;
+  }
+  const recs = [];
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const rec = JSON.parse(trimmed);
+      if (rec && typeof rec === "object") recs.push(rec);
+    } catch {
+    }
+  }
+  if (recs.length > INBOX_MAX) {
+    inbox = recs.slice(-INBOX_MAX);
+    rewriteInbox();
+  } else {
+    inbox = recs;
+  }
+}
+function appendInbox(rec) {
+  inbox.push(rec);
+  if (inbox.length > INBOX_MAX) {
+    inbox = inbox.slice(-INBOX_MAX);
+    rewriteInbox();
+  } else {
+    try {
+      appendFileSync(inboxPath, JSON.stringify(rec) + "\n");
+    } catch (err) {
+      console.error("pinpoint: failed to append inbox.jsonl:", err);
+    }
+  }
+}
+function renderInboxRecord(rec) {
+  return `[pinpoint id=${str(rec.id)} kind=${str(rec.kind)}]
+${str(rec.content)}`;
+}
+loadInbox();
 function tokenOk(provided) {
   if (typeof provided !== "string") return false;
   const a = Buffer.from(provided);
@@ -15535,6 +15589,19 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
         required: ["task_id", "status"]
       }
+    },
+    {
+      name: "get_inbox",
+      description: "Drain the pinpoint inbox: return any pinpoint tasks/follow-ups that were queued (including ones that may have been missed by the live channel push) in the same content format as the channel tags. Call this at session start and whenever the user asks whether a task arrived. Returned pending records are marked delivered so a later call does not repeat them.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          include_delivered: {
+            type: "boolean",
+            description: "Include already-delivered records too (default false = pending only)."
+          }
+        }
+      }
     }
   ]
 }));
@@ -15546,6 +15613,33 @@ mcp.setRequestHandler(CallToolRequestSchema, async (req) => {
     const note = args && typeof args.note === "string" ? args.note : void 0;
     broadcast({ type: "status", task_id, status, note });
     return { content: [{ type: "text", text: "ok" }] };
+  }
+  if (name === "get_inbox") {
+    const includeDelivered = !!(args && args.include_delivered);
+    const selected = inbox.filter((r) => includeDelivered || !r.delivered);
+    if (selected.length === 0) {
+      return {
+        content: [
+          {
+            type: "text",
+            text: includeDelivered ? "pinpoint inbox is empty." : "No pending pinpoint tasks \u2014 the inbox is drained."
+          }
+        ]
+      };
+    }
+    const body = selected.map(renderInboxRecord).join("\n\n---\n\n");
+    const text = `${selected.length} pinpoint inbox record(s):
+
+${body}`;
+    let changed = false;
+    for (const r of selected) {
+      if (!r.delivered) {
+        r.delivered = true;
+        changed = true;
+      }
+    }
+    if (changed) rewriteInbox();
+    return { content: [{ type: "text", text }] };
   }
   return { content: [{ type: "text", text: `unknown tool: ${name}` }], isError: true };
 });
@@ -15720,6 +15814,7 @@ Rufe update_status({task_id:"${taskId}", status:"working"}) wenn du startest und
         viewport: firstViewport,
         kind: "task"
       };
+      appendInbox({ id: String(taskId), kind: "task", content, meta: meta2, ts: Date.now(), delivered: false });
       try {
         await mcp.notification({
           method: "notifications/claude/channel",
@@ -15764,6 +15859,7 @@ Rufe update_status({task_id:"${taskId}", status:"working"}) wenn du startest und
 
 ${text}`;
       const meta2 = { task_id: taskId, kind: "followup" };
+      appendInbox({ id: taskId, kind: "followup", content, meta: meta2, ts: Date.now(), delivered: false });
       try {
         await mcp.notification({
           method: "notifications/claude/channel",
